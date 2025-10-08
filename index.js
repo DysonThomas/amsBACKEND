@@ -1,6 +1,14 @@
 const express = require("express");
 const mysql = require("mysql2");
 const app = express();
+const cors = require("cors");
+app.use(cors({
+  origin: 'http://localhost:4200',  // Your Angular app URL
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 const PORT = 3000;
 
@@ -80,4 +88,63 @@ app.post("/log", (req, res) => {
     }
   );
 });
+// For Web App
 
+app.get("/getattendance",(req,res)=>{
+      const {startDate, endDate} = req.query;
+        if (!startDate || !endDate) {
+    return res.status(400).send("Please provide startDate and endDate");
+  }
+   const sql = `
+   SELECT f.userID AS empID,u.userName AS empName,
+   DATE_FORMAT(MIN(f.detected_time), '%Y-%m-%d') AS date,
+   DATE_FORMAT(MIN(f.detected_time), '%H:%i:%s') AS check_in,
+   DATE_FORMAT(MAX(f.detected_time), '%H:%i:%s') AS check_out,
+   TIMEDIFF(MAX(f.detected_time),
+   MIN(f.detected_time)) AS duration from face_logs f 
+   JOIN userreg u ON f.userID = u.userID
+    where DATE(f.detected_time) BETWEEN ? AND ? GROUP BY f.userID, DATE(f.detected_time)
+  `;
+    db.query(sql, [startDate, endDate], (err, results) => {
+    if (err) {
+      console.error("Fetch error: ", err);
+      return res.status(500).send("Database error");
+    }        
+        res.json(results);
+   
+    });
+});
+
+app.get("/getallemp",(req,res)=>{
+    db.query("SELECT userID, userName FROM userreg",(err, results)=>{
+        if (err) {
+      console.error("Fetch error: ", err);
+      return res.status(500).send("Database error");
+    }
+        res.json(results);
+    } );
+});   
+
+app.get("/getspecificattendance",(req,res)=>{
+      const {userID, startDate, endDate} = req.query; 
+        if (!userID || !startDate || !endDate) {
+    return res.status(400).send("Please provide userID, startDate and endDate");
+  } 
+    const sql = `SELECT f.userID AS empID,u.userName AS empName,
+   DATE_FORMAT(MIN(f.detected_time), '%Y-%m-%d') AS date,
+   DATE_FORMAT(MIN(f.detected_time), '%H:%i:%s') AS check_in,
+    DATE_FORMAT(MAX(f.detected_time), '%H:%i:%s') AS check_out,
+    TIMEDIFF(MAX(f.detected_time),mIN(f.detected_time)) AS duration from face_logs f 
+   JOIN userreg u ON f.userID = u.userID
+    where f.userID = ? AND DATE(f.detected_time) BETWEEN ? AND ? GROUP BY f.userID, DATE(f.detected_time) 
+  `;
+    db.query(sql, [userID, startDate, endDate], (err, results) => {
+    if (err) {
+      console.error("Fetch error: ", err);
+      return res.status(500).send("Database error");
+    }
+        res.json(results);
+    });
+} );
+
+// For Mobile App  
