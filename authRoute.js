@@ -114,6 +114,7 @@ router.get("/getattendance",(req,res)=>{
    DATE_FORMAT(f.log_out_time, '%H:%i:%s') AS check_out,
    DATE_FORMAT(log_in_time, '%Y-%m-%d %H:%i:%s') AS Login_Time,
   DATE_FORMAT(log_out_time, '%Y-%m-%d %H:%i:%s') AS Logout_Time,
+  DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
     CASE 
     WHEN f.log_out_time < f.log_in_time 
       THEN SEC_TO_TIME(TIME_TO_SEC(f.log_out_time) + 86400 - TIME_TO_SEC(f.log_in_time))
@@ -160,6 +161,7 @@ router.get("/getspecificattendance",(req,res)=>{
     DATE_FORMAT(f.log_out_time, '%H:%i:%s') AS check_out,
        DATE_FORMAT(log_in_time, '%Y-%m-%d %H:%i:%s') AS Login_Time,
   DATE_FORMAT(log_out_time, '%Y-%m-%d %H:%i:%s') AS Logout_Time,
+    DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
      CASE 
     WHEN f.log_out_time < f.log_in_time 
       THEN SEC_TO_TIME(TIME_TO_SEC(f.log_out_time) + 86400 - TIME_TO_SEC(f.log_in_time))
@@ -287,22 +289,97 @@ router.put("/updatefacerec",verifyToken,(req,res)=>{
 
   });
 });
-router.post("/setUpdateLog",verifyToken,(req,res)=>{
-   const userId = req.user.user_id;
-    const { log_id,actualLogInTime,actualLogOutTime,actionType,newCheckIn, newCheckOut, approved_by } = req.body;
-  const query= "INSERT into update_logs (user_id,whoApproved,record_id,action_type,actual_login_time,actual_logout_time,updated_login_time,updated_logout_time) Values (?,?,?,?,?,?,?,?)";
-  pool.query(query,[userId,approved_by,log_id,actionType,actualLogInTime,actualLogOutTime,newCheckIn,newCheckOut],(err,result)=>{
-      if (err) {
-      console.error("Database error:", err);
-      return res.status(500).json({ message: "Database error", error: err });
-    }
-    res.status(200).json({ message: "Log record updated successfully!",status:'recorded' });
+router.post("/setUpdateLog", verifyToken, (req, res) => {
+  const userId = req.user.user_id;
+  const {
+    log_id,
+    actualLogInTime,
+    actualLogOutTime,
+    actionType,
+    newCheckIn,
+    newCheckOut,
+    approved_by,
+    emp_id
+  } = req.body;
 
+  // Validation
+  if (!log_id || !actionType || !approved_by || !emp_id) {
+    return res.status(400).json({
+      message: "Missing required fields",
+      required: ["log_id", "actionType", "approved_by", "emp_id"]
+    });
+  }
+
+  // Validate actionType
+  const validActions = ['Update', 'Delete', 'Create'];
+  if (!validActions.includes(actionType)) {
+    return res.status(400).json({
+      message: "Invalid action type",
+      validActions
+    });
+  }
+
+  const query = `
+    INSERT INTO update_logs (
+      user_id,
+      whoApproved,
+      record_id,
+      action_type,
+      actual_login_time,
+      actual_logout_time,
+      updated_login_time,
+      updated_logout_time,
+      emp_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const values = [
+    userId,
+    approved_by,
+    log_id,
+    actionType,
+    actualLogInTime || null,
+    actualLogOutTime || null,
+    newCheckIn || null,
+    newCheckOut || null,
+    emp_id
+  ];
+
+  pool.query(query, values, (err, result) => {
+    if (err) {
+      console.error("Database error inserting update log:", err);
+      
+      // Check for specific error types
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({
+          message: "Duplicate log entry",
+          error: "This log record already exists"
+        });
+      }
+      
+      if (err.code === 'ER_NO_REFERENCED_ROW_2') {
+        return res.status(400).json({
+          message: "Invalid reference",
+          error: "Referenced record does not exist"
+        });
+      }
+
+      return res.status(500).json({
+        message: "Failed to create log record",
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+
+    res.status(201).json({
+      message: "Log record created successfully",
+      status: 'recorded',
+      logId: result.insertId
+    });
   });
 });
 router.get("/getRoles", (req, res) => {
   
-     const query = "SELECT * FROM update_logs "; 
+     const query = "SELECT * FROM roles "; 
        pool.query(query, async (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
      if (results.length === 0)
@@ -310,6 +387,229 @@ router.get("/getRoles", (req, res) => {
      res.json(results);
     } );
 });
+router.put("/closeshift",verifyToken,(req,res)=>{
+   const { userId } = req.body;
+   console.log(userId)
+  const query= "Update userreg set isLoggedIn=false where userID= ? ";
+  pool.query(query,[userId],(err,result)=>{
+      if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+       res.status(200).json({ message: "Updated Sucess Fully ",status:'recorded' });
 
+  });
+});
+router.delete("/deleteShift",verifyToken,(req,res)=>{
+const log_id = req.query.log_id
+console.log('aaa',log_id)
+const query = "DELETE FROM face_logs WHERE log_id = ?";
+pool.query(query,[log_id],(err,result)=>{
+if (err) return res.status(500).json({ error: err });
+
+if(result.affectedRows>0){
+res.json({ message: "item deleted successfully" });
+}else{
+     res.status(400).json({ message: "Failed to delete item" });
+}
+});
+});
+router.get("/getLog",verifyToken,(req,res)=>{
+   const { startDate,endDate } = req.query;
+   const query =`SELECT 
+  u.id,
+  us.full_name AS Dashboard_User,
+  r.role_name AS Approver,
+  u.record_id AS RecordID,
+  u.action_type AS Action,
+  ur.userName AS EmployeeName,
+  DATE_FORMAT(u.actual_login_time, '%Y-%m-%d %H:%i:%s') AS actual_login_time,
+  DATE_FORMAT(u.actual_logout_time, '%Y-%m-%d %H:%i:%s') AS actual_logout_time,
+  DATE_FORMAT(u.updated_login_time, '%Y-%m-%d %H:%i:%s') AS updated_login_time,
+  DATE_FORMAT(u.updated_logout_time, '%Y-%m-%d %H:%i:%s') AS updated_logout_time,
+  DATE_FORMAT(u.updated_on, '%Y-%m-%d %H:%i:%s') AS updated_on
+FROM ams.update_logs u
+LEFT JOIN users us ON u.user_id = us.id
+LEFT JOIN roles r ON u.whoApproved = r.role_id
+LEFT JOIN userreg ur ON ur.userID = u.emp_id
+WHERE u.updated_on BETWEEN ? AND ?;
+`
+  pool.query(query,[startDate,endDate], async (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+     if (results.length === 0)
+      return res.status(401).json({ message: "No Log Found" });
+     res.json(results);
+    } );
+  });
+router.get("/getTotalHours", verifyToken, (req, res) => {
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "Start date and end date are required" });
+  }
+
+  const query = `
+    SELECT 
+      f.userID AS empID,
+      u.userName AS empName,
+      SEC_TO_TIME(SUM(
+        CASE 
+          WHEN f.log_out_time < f.log_in_time 
+            THEN TIME_TO_SEC(f.log_out_time) + 86400 - TIME_TO_SEC(f.log_in_time)
+          ELSE 
+            TIME_TO_SEC(TIMEDIFF(f.log_out_time, f.log_in_time))
+        END
+      )) AS total_working_hours
+    FROM face_logs f
+    JOIN userreg u ON f.userID = u.userID
+    WHERE DATE(f.log_in_time) BETWEEN DATE(?) AND DATE(?)  
+    GROUP BY f.userID, u.userName
+    ORDER BY u.userName;
+  `;
+
+  pool.query(query, [startDate, endDate], (err, results) => {
+    if (err) {
+      console.error("SQL Error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ message: "No attendance found for the given date range" });
+    }
+
+    res.status(200).json(results);
+  });
+});
+
+// api to get all  employee details 
+
+router.get("/getAllEmployeeDetails", verifyToken, (req, res) => {
+  const query = "SELECT u.userID, u.userName, u.isLoggedIn, u.isActive,u.isEdit, e.department,e.phone_number,e.email FROM userreg u join employees e on u.userID=e.emp_id";   
+  pool.query(query, (err, results) => {
+    if (err) {
+      console.error("SQL Error:", err);
+      return res.status(500).json({ error: err.message });
+    } 
+    res.status(200).json(results);
+  });
+} );   
+
+// api to update employee details
+router.put("/updateEmployeeDetails", verifyToken, (req, res) => {
+console.log(req.body);
+  const {
+    userID,
+    department,
+    phone_number,
+    email,
+    address,
+    startdate,
+    enddate,
+    userName
+  } = req.body;
+
+  const updateEmployeeQuery = `
+    UPDATE employees
+    SET department = ?, phone_number = ?, email = ?, address = ?, startdate = ?, enddate = ?
+    WHERE emp_id = ?
+  `;
+
+  pool.query(
+    updateEmployeeQuery,
+    [department, phone_number, email, address, startdate, enddate, userID],
+    (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Database error", error: err });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "No employee found with that ID" });
+      }
+
+      // Update userreg table
+      const updateUserRegQuery = `
+        UPDATE userreg SET userName = ? WHERE userID = ?
+      `;
+
+      pool.query(updateUserRegQuery, [userName, userID], (err) => {
+        if (err) {
+          console.error("Database error updating userreg:", err);
+          return res.status(500).json({ message: "Error updating user name" });
+        }
+
+        return res.status(200).json({
+          message: "Employee details updated successfully",
+          status: "Updated"
+        });
+      });
+    }
+  );
+});
+
+// api to change the status of employee
+router.put("/changeEmployeeStatus", verifyToken, (req, res) => {
+  const { userID, isActive } = req.body;
+
+  const query = "UPDATE userreg SET isActive = ? WHERE userID = ?";
+
+  pool.query(query, [isActive, userID], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No employee found with that ID" });
+    }
+
+    return res.status(200).json({
+      message: "Employee status updated successfully",
+      status: "Updated"
+    });
+  });
+});
+
+// api to update employee status
+router.put("/updateEmployeeStatus", verifyToken, (req, res) => {
+  const { userID, isActive } = req.body;
+  console.log(userID, isActive);
+  const query = "UPDATE userreg SET isActive = ? WHERE userID = ?";
+
+  pool.query(query, [isActive, userID], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No employee found with that ID" });
+    }
+    return res.status(200).json({
+      message: "Employee status updated successfully",
+      status: "Updated"
+    });
+  }
+);
+});
+
+router.put("/updatenewface", verifyToken, (req, res) => {
+  const { userID, isEdit } = req.body;
+  const query = "UPDATE userreg SET isEdit = ? WHERE userID = ?";
+
+  pool.query(query, [isEdit, userID], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No employee found with that ID" });
+    }
+    return res.status(200).json({
+      message: "Employee edit status updated successfully",
+      status: "Updated"
+    });
+  }
+);
+});
 
 module.exports = router;
