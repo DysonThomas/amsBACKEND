@@ -10,32 +10,43 @@ const verifyToken = require("./verifyToken")
 require("dotenv").config();
 
 router.post("/users",(req,res)=>{
-     const {userID,userName,faceembed} = req.body;
+     const {userID,userName,faceembed,storeId} = req.body;
     const faceembedJson = JSON.stringify(faceembed);
-    const query = "INSERT INTO userreg(userID, userName, Faceembed) VALUES (?, ?, ?)"
+    const query = "INSERT INTO userreg(userID, userName, Faceembed, storeId) VALUES (?, ?, ?, ?)"
     pool.query(
         query,
-         [userID,userName, faceembedJson],
+         [userID,userName, faceembedJson,storeId],
          (err, result) => {
                if (err) {
                 res.status(500).send("Database error");
-            } else {
-                res.send("User inserted successfully");
             }
+             
+            else if(result.affectedRows>0){
+                res.json({ message: "User registered successfully" });
+              const subQuery = "INSERT INTO employees (emp_id) VALUES (?)";
+              pool.query(subQuery, [userID], (err, result) => {
+                if (err) {
+                  console.error("Error inserting into employees table:", err);
+                }
+              });
+            }else{
+                res.status(400).json({ message: "Failed to register user" });
          }
+      }
         
     )
 });
+// get all  details from userreg table based on storeId
 
-router.get("/allusers",(req,res)=>{
+router.get("/allusers",(req,res)=>{ 
+    const {storeId} = req.query;
+    const query = "SELECT * FROM userreg WHERE storeId = ?";
+    pool.query(query,[storeId],(err, results)=>{
 
-    const query = "SELECT * FROM userreg";
-
-    pool.query(query,(err, results)=>{
         if (err) {
       console.error("Fetch error: ", err);
       return res.status(500).send("Database error");
-    }
+    } 
       const users = results.map(row => ({
       userID: row.userID,
       userName: row.userName,
@@ -46,6 +57,7 @@ router.get("/allusers",(req,res)=>{
         res.json(users);
     });
 });
+
 // For Login
 router.post("/login", (req, res) => {
   const { userID, log_in_time } = req.body;
@@ -185,7 +197,8 @@ router.get("/getspecificattendance",(req,res)=>{
 } );
 router.post("/register", async (req, res) => {
   console.log("✅ Register endpoint hit");
-  const { username, email, password,role } = req.body;
+  const { username, email, password,role,storeId } = req.body;
+  console.log(username, email, password,role,storeId);
   if (!username || !email || !password  ) {
     return res.status(400).json({ message: "All fields are required" });
   }
@@ -194,8 +207,8 @@ router.post("/register", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const query = "INSERT INTO users (full_name, email, password,role) VALUES (?, ?,?,?)";
-    pool.query(query, [username, email, hashedPassword,role], (err, result) => {
+    const query = "INSERT INTO dashboardusers (full_name, email, password,role,storeId) VALUES (?, ?,?,?,?)";
+    pool.query(query, [username, email, hashedPassword,role,storeId], (err, result) => {
       if (err) {
         console.error("❌ Database insert error:", err);
         return res.status(500).json({ error: err.message });
@@ -215,7 +228,7 @@ router.post("/logindashboard", (req, res) => {
   console.log("inside");
   return res.status(400).json({ message: "All fields are required" });
 }
-  const query = "SELECT * FROM users WHERE email = ?";
+  const query = "SELECT * FROM dashboardusers WHERE email = ?";
 
   pool.query(query, [email], async (err, results) => {
        
@@ -225,6 +238,7 @@ router.post("/logindashboard", (req, res) => {
  
 
     const user = results[0];
+    console.log(user);
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch)
@@ -240,13 +254,13 @@ router.post("/logindashboard", (req, res) => {
     res.json({
       message: "Login successful",
       token,
-      user: { id: user.user_ID, username: user.full_name, email: user.email, id: user.id}, 
+      user: { id: user.user_ID, username: user.full_name, email: user.email, id: user.id,storeId: user.storeId ,role:user.role}, 
         });
   });
 });
 router.get("/protected", verifyToken, (req, res) => {
   const userId = req.user.user_id;
-     const query = "SELECT * FROM users WHERE id = ?"; 
+     const query = "SELECT * FROM dashboardusers WHERE id = ?"; 
        pool.query(query, [userId], async (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
      if (results.length === 0)
@@ -611,5 +625,90 @@ router.put("/updatenewface", verifyToken, (req, res) => {
   }
 );
 });
+// get all store
+router.get("/getAllStores", (req, res) => {
+  
+     const query = "SELECT * FROM storemaster";
+
+    pool.query(query, async (err, results) => { 
+    if (err) return res.status(500).json({ error: err.message });
+     if (results.length === 0)
+      return res.status(401).json({ message: "No Store Found" });
+     
+      res.json(results);
+    } );
+});
+// Update store details using storeId
+router.put("/updateStoreDetails", verifyToken, (req, res) => {
+  const {
+    storeId,  
+    name,
+    address
+  } = req.body;
+  const query = `
+    UPDATE storemaster
+    SET name = ?, address = ?
+    WHERE storeId = ?
+  `;
+  pool.query(
+    query,
+    [name, address, storeId],
+    (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Database error", error: err });
+      } 
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "No store found with that ID" });
+      }
+      return res.status(200).json({
+        message: "Store details updated successfully",
+        status: "Updated"
+      });
+    }
+  );
+});
+// Update store status using storeID
+router.put("/updateStoreStatus", verifyToken, (req, res) => {
+
+  const { storeId, isActive } = req.body;
+  console.log(storeId, isActive);
+  const query = "UPDATE storemaster SET isActive = ? WHERE storeId = ?";
+  pool.query(query, [isActive, storeId], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No store found with that ID" });
+    }
+      
+
+    return res.status(200).json({
+      message: "Store status updated successfully",
+      status: "Updated"
+    });
+  }
+);        
+});
+
+// api to get store details using storeid
+router.get("/getStoreDetails", (req, res) => {
+  const { storeId } = req.query;
+  console.log(storeId);
+  const query = "SELECT * FROM storemaster WHERE storeId = ?";
+  pool.query(query, [storeId], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "No store found with that ID" });
+    }
+    return res.status(200).json(results[0]);
+  });
+});
+
+
 
 module.exports = router;
