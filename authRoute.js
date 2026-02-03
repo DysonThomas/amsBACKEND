@@ -51,9 +51,12 @@ router.get("/allusers",(req,res)=>{
       userID: row.userID,
       userName: row.userName,
       isLoggedIn: row.isLoggedIn,
+            isActive: row.isActive,
       faceembed: row.Faceembed,
+
       
     }));
+
         res.json(users);
     });
 });
@@ -78,7 +81,6 @@ const query = "INSERT INTO face_logs (userID, log_in_time) VALUES (?, ?)"
 // UpdateLog Table
 router.put("/updateLog", (req, res) => {
   const { userID, isLoggedIn } = req.body;
-console.log(userID,isLoggedIn);
   const query = "UPDATE userreg SET isLoggedIn = ? WHERE userID = ?";
   
   pool.query(query, [isLoggedIn, userID], (err, result) => {
@@ -196,9 +198,11 @@ router.get("/getspecificattendance",(req,res)=>{
     });
 } );
 router.post("/register", async (req, res) => {
-  console.log("✅ Register endpoint hit");
+
+  
   const { username, email, password,role,storeId } = req.body;
-  console.log(username, email, password,role,storeId);
+
+  
   if (!username || !email || !password  ) {
     return res.status(400).json({ message: "All fields are required" });
   }
@@ -207,7 +211,7 @@ router.post("/register", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const query = "INSERT INTO dashboardusers (full_name, email, password,role,storeId) VALUES (?, ?,?,?,?)";
+    const query = "INSERT INTO dashboardusers (full_name, email, password,role,storeId) VALUES (?, ?,?,?,?        )";
     pool.query(query, [username, email, hashedPassword,role,storeId], (err, result) => {
       if (err) {
         console.error("❌ Database insert error:", err);
@@ -225,7 +229,7 @@ router.post("/logindashboard", (req, res) => {
   const { email, password } = req.body;
 
  if (!email || !password || email.trim() === '' || password.trim() === '') {
-  console.log("inside");
+
   return res.status(400).json({ message: "All fields are required" });
 }
   const query = "SELECT * FROM dashboardusers WHERE email = ?";
@@ -238,7 +242,7 @@ router.post("/logindashboard", (req, res) => {
  
 
     const user = results[0];
-    console.log(user);
+   
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch)
@@ -286,7 +290,7 @@ router.get("/getRoles", (req, res) => {
 router.put("/updatefacerec",verifyToken,(req,res)=>{
   
     const { log_id, newCheckIn, newCheckOut } = req.body;
-    console.log(log_id, newCheckIn, newCheckOut);
+
     if (!log_id) {
     return res.status(400).json({ message: "Missing log_id" });
   }
@@ -403,7 +407,8 @@ router.get("/getRoles", (req, res) => {
 });
 router.put("/closeshift",verifyToken,(req,res)=>{
    const { userId } = req.body;
-   console.log(userId)
+
+
   const query= "Update userreg set isLoggedIn=false where userID= ? ";
   pool.query(query,[userId],(err,result)=>{
       if (err) {
@@ -416,7 +421,7 @@ router.put("/closeshift",verifyToken,(req,res)=>{
 });
 router.delete("/deleteShift",verifyToken,(req,res)=>{
 const log_id = req.query.log_id
-console.log('aaa',log_id)
+
 const query = "DELETE FROM face_logs WHERE log_id = ?";
 pool.query(query,[log_id],(err,result)=>{
 if (err) return res.status(500).json({ error: err });
@@ -510,7 +515,7 @@ router.get("/getAllEmployeeDetails", verifyToken, (req, res) => {
 
 // api to update employee details
 router.put("/updateEmployeeDetails", verifyToken, (req, res) => {
-console.log(req.body);
+
   const {
     userID,
     department,
@@ -587,7 +592,7 @@ router.put("/changeEmployeeStatus", verifyToken, (req, res) => {
 // api to update employee status
 router.put("/updateEmployeeStatus", verifyToken, (req, res) => {
   const { userID, isActive } = req.body;
-  console.log(userID, isActive);
+ 
   const query = "UPDATE userreg SET isActive = ? WHERE userID = ?";
 
   pool.query(query, [isActive, userID], (err, result) => {
@@ -672,7 +677,7 @@ router.put("/updateStoreDetails", verifyToken, (req, res) => {
 router.put("/updateStoreStatus", verifyToken, (req, res) => {
 
   const { storeId, isActive } = req.body;
-  console.log(storeId, isActive);
+
   const query = "UPDATE storemaster SET isActive = ? WHERE storeId = ?";
   pool.query(query, [isActive, storeId], (err, result) => {
     if (err) {
@@ -694,8 +699,8 @@ router.put("/updateStoreStatus", verifyToken, (req, res) => {
 
 // api to get store details using storeid
 router.get("/getStoreDetails", (req, res) => {
+ console.log("Fetching store details with query:", req.query);
   const { storeId } = req.query;
-  console.log(storeId);
   const query = "SELECT * FROM storemaster WHERE storeId = ?";
   pool.query(query, [storeId], (err, results) => {
     if (err) {
@@ -709,6 +714,42 @@ router.get("/getStoreDetails", (req, res) => {
   });
 });
 
+// Api to  fetch employee details by isEdit status and storeId
+router.get("/getEmployeesByEditStatus", (req, res) => {
+  console.log("Fetching employees with isEdit = 1 and storeId:", req.query.storeId);
+  const {  storeId } = req.query;
+  const query = "SELECT userID, userName, isEdit FROM userreg WHERE isEdit = 1 AND storeId = ?";
+  pool.query(query, [storeId], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    return res.status(200).json(results);
+  });
+}); 
 
+
+// update faceembed and isEdit based on the storeID
+router.put("/updateFaceEmbed", (req, res) => {
+  const { userID, faceembed,userName } = req.body;
+  const faceembedJson = JSON.stringify(faceembed);
+  const query = "UPDATE userreg SET Faceembed = ?, userName = ?, isEdit = 0 WHERE userID = ?";
+  pool.query(query, [faceembedJson, userName, userID], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No employee found with that ID" });
+    }
+
+    return res.status(200).json({
+      message: "Face embed updated successfully",
+      status: "Updated"
+    });
+  }
+);
+}
+);
 
 module.exports = router;
