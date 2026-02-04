@@ -40,7 +40,8 @@ router.post("/users",(req,res)=>{
 
 router.get("/allusers",(req,res)=>{ 
     const {storeId} = req.query;
-    const query = "SELECT * FROM userreg WHERE storeId = ?";
+    console.log("Fetching users for storeId:", storeId);
+    const query = "SELECT * FROM userreg WHERE storeId = ? and isActive = 1";
     pool.query(query,[storeId],(err, results)=>{
 
         if (err) {
@@ -51,7 +52,7 @@ router.get("/allusers",(req,res)=>{
       userID: row.userID,
       userName: row.userName,
       isLoggedIn: row.isLoggedIn,
-            isActive: row.isActive,
+      isActive: row.isActive,
       faceembed: row.Faceembed,
 
       
@@ -117,9 +118,9 @@ const query = "UPDATE face_logs  SET log_out_time = ? WHERE userID = ?  ORDER BY
 
 
 router.get("/getattendance",(req,res)=>{
-      const {startDate, endDate} = req.query;
-        if (!startDate || !endDate) {
-    return res.status(400).send("Please provide startDate and endDate");
+      const {startDate, endDate, storeId} = req.query;
+        if (!startDate || !endDate || !storeId) {
+    return res.status(400).send("Please provide startDate, endDate and storeId");
   }
   const query =  `
    SELECT log_id,f.userID AS empID,u.userName AS empName,
@@ -141,10 +142,10 @@ router.get("/getattendance",(req,res)=>{
   END AS is_midnight_shift
     from face_logs f 
    JOIN userreg u ON f.userID = u.userID
-    where DATE(f.log_in_time) BETWEEN ? AND ? ORDER BY f.log_in_time;
+    where DATE(f.log_in_time) BETWEEN ? AND ? AND u.storeId = ? ORDER BY f.log_in_time;
   `;
-    pool.query(query, [startDate, endDate], (err, results) => {
-    if (err) {
+    pool.query(query, [startDate, endDate, storeId], (err, results) => {
+    if (err) {    
       console.error("Fetch error: ", err);
       return res.status(500).send("Database error");
     }        
@@ -154,8 +155,10 @@ router.get("/getattendance",(req,res)=>{
 });
 
 router.get("/getallemp",(req,res)=>{
-    const query = "SELECT userID, userName FROM userreg";
-    pool.query(query,(err, results)=>{
+  const{storeId} = req.query;
+  console.log("Fetching all employees for storeId:", storeId);
+    const query = "SELECT userID, userName FROM userreg WHERE storeId = ?";
+    pool.query(query,[storeId],(err, results)=>{
         if (err) {
       console.error("Fetch error: ", err);
       return res.status(500).send("Database error");
@@ -165,9 +168,9 @@ router.get("/getallemp",(req,res)=>{
 });   
 
 router.get("/getspecificattendance",(req,res)=>{
-      const {userID, startDate, endDate} = req.query; 
-        if (!userID || !startDate || !endDate) {
-    return res.status(400).send("Please provide userID, startDate and endDate");
+      const {userID, startDate, endDate, storeId} = req.query; 
+        if (!userID || !startDate || !endDate || !storeId) {
+    return res.status(400).send("Please provide userID, startDate, endDate and storeId");
   } 
     const query = `SELECT log_id,f.userID AS empID,u.userName AS empName,
    DATE_FORMAT(f.log_in_time, '%Y-%m-%d') AS date,
@@ -184,12 +187,12 @@ router.get("/getspecificattendance",(req,res)=>{
   END AS duration,
    CASE
     WHEN DATE(f.log_in_time) <> DATE(f.log_out_time) THEN 'Yes'
-    ELSE 'No'
+    ELSE 'No'   
   END AS is_midnight_shift from face_logs f 
    JOIN userreg u ON f.userID = u.userID
-    where f.userID = ? AND DATE(f.log_in_time) BETWEEN ? AND ? ORDER BY f.log_in_time;
+    where f.userID = ? AND DATE(f.log_in_time) BETWEEN ? AND ? AND u.storeId = ? ORDER BY f.log_in_time;
   `;
-    pool.query(query, [userID, startDate, endDate], (err, results) => {
+    pool.query(query, [userID, startDate, endDate, storeId], (err, results) => {
     if (err) {
       console.error("Fetch error: ", err);
       return res.status(500).send("Database error");
@@ -503,8 +506,9 @@ router.get("/getTotalHours", verifyToken, (req, res) => {
 // api to get all  employee details 
 
 router.get("/getAllEmployeeDetails", verifyToken, (req, res) => {
-  const query = "SELECT u.userID, u.userName, u.isLoggedIn, u.isActive,u.isEdit, e.department,e.phone_number,e.email FROM userreg u join employees e on u.userID=e.emp_id";   
-  pool.query(query, (err, results) => {
+  const { storeId } = req.query;
+  const query = "SELECT u.userID, u.userName, u.isLoggedIn, u.isActive,u.isEdit, e.department,e.phone_number,e.email FROM userreg u join employees e on u.userID=e.emp_id WHERE u.storeId = ?";   
+  pool.query(query,[storeId], (err, results) => {
     if (err) {
       console.error("SQL Error:", err);
       return res.status(500).json({ error: err.message });
@@ -751,5 +755,155 @@ router.put("/updateFaceEmbed", (req, res) => {
 );
 }
 );
+
+// fetch storeId from  dashboardusers using user id
+router.get("/getStoreId", (req, res) => {
+  console.log("Fetching storeId with query:", req.query);
+  const { userId } = req.query;
+  console.log("User ID:", userId);
+  const query = "SELECT storeId FROM dashboardusers WHERE id = ?";
+  pool.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "No user found with that ID" });
+    }
+    return res.status(200).json({ storeId: results[0].storeId });
+  }
+);
+} );
+
+// get all dashboard users
+router.get("/getDashbaordemployees", (req, res) => {
+  const { storeId } = req.query;
+    if (!storeId) {
+    return res.status(400).json({ message: "storeId is required" });
+  }
+  console.log("Fetching all dashboard users for storeId:", storeId);
+  const query = "SELECT d.*, r.role_name FROM dashboardusers d JOIN roles r ON d.role = r.role_id WHERE d.storeId = ?";
+  pool.query(query, [storeId], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    return res.status(200).json(results);
+  }
+);
+} );
+
+// Update dashboard user details
+router.put("/updateDashboardUser", verifyToken, (req, res) => {
+  const { id, full_name, email, role } = req.body;
+  if(full_name===undefined || email===undefined || role===undefined){
+    return res.status(400).json({ message: "full_name, email, and role are required" });
+  }
+  const query = `
+    UPDATE dashboardusers
+    SET full_name = ?, email = ?, role = ?
+    WHERE id = ?
+  `;
+  pool.query(
+    query,  
+    [full_name, email, role, id],
+    (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Database error", error: err });
+      } 
+      if (result.affectedRows === 0) {        
+        return res.status(404).json({ message: "No dashboard user found with that ID" });
+      }
+      return res.status(200).json({
+        message: "Dashboard user details updated successfully",
+        status: "Updated"
+      });
+    } 
+  );
+});
+
+// Api to  add new dashboard user 
+router.post("/addDashboardUser", verifyToken, async (req, res) => {
+  const { full_name, email, password, role, storeId } = req.body;
+  if (!full_name || !email || !password || !role || !storeId) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const query = "INSERT INTO dashboardusers (full_name, email, password, role, storeId) VALUES (?, ?, ?, ?, ?)";
+    pool.query(query, [full_name, email, hashedPassword, role, storeId], (err, result) => {
+      if (err) {
+        console.error("❌ Database insert error:", err);
+        return res.status(500).json({ error: err.message });
+      }
+
+      res.status(201).json({ message: "Dashboard user added successfully", user_id: result.insertId });
+    });
+  }
+  catch (err) {
+    console.error("⚠️ Error in addDashboardUser route:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+}); 
+
+
+// Api to change password of dashboard user
+router.put("/changePassword", verifyToken, async (req, res) => {
+  const { userId,newPassword } = req.body;
+  console.log("Changing password for user ID:", userId);
+  if (!userId || !newPassword) {
+    return res.status(400).json({ message: "userId and newPassword are required" });
+  }
+  try {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const query = "UPDATE dashboardusers SET password = ? WHERE id = ?";
+
+    pool.query(query, [hashedPassword, userId ], (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Database error", error: err });
+      }   
+      if (result.affectedRows === 0) {  
+        return res.status(404).json({ message: "No dashboard user found with that ID" });
+      }
+      return res.status(200).json({   
+        message: "Password changed successfully",
+        status: "Updated"
+      });
+    }
+    );  
+  } catch (err) { 
+    console.error("Error in changePassword route:", err); 
+    res.status(500).json({ message: "Server error" });  
+  }   
+});   
+// get employee name using the userID 
+router.get("/getEmployeeName", (req, res) => {
+  const { userId } = req.query;
+  console.log("Fetching employee name for userID:", userId);
+  const query = "SELECT full_name FROM dashboardusers WHERE id = ?";
+  pool.query(query, [userId], (err, results) => {
+    if (err) {  
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "No dashboard user found with that ID" });
+    }
+    return res.status(200).json({ full_name: results[0].full_name });
+  } 
+);    
+} );  
+
+
+
+
+    
+
+
+  
+
 
 module.exports = router;
