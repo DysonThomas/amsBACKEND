@@ -201,20 +201,14 @@ router.get("/getspecificattendance",(req,res)=>{
     });
 } );
 router.post("/register", async (req, res) => {
-
-  
   const { username, email, password,role,storeId } = req.body;
-
-  
   if (!username || !email || !password  ) {
     return res.status(400).json({ message: "All fields are required" });
   }
-
   try {
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const query = "INSERT INTO dashboardusers (full_name, email, password,role,storeId) VALUES (?, ?,?,?,?        )";
+    const query = "INSERT INTO dashboardusers (full_name, email, password,role,storeId) VALUES (?, ?,?,?,?)";
     pool.query(query, [username, email, hashedPassword,role,storeId], (err, result) => {
       if (err) {
         console.error("❌ Database insert error:", err);
@@ -896,6 +890,31 @@ router.get("/getEmployeeName", (req, res) => {
   } 
 );    
 } );  
+
+// Api to add new attendance 
+router.post("/addAttendance", verifyToken, (req, res) => {
+  const { userID, log_in_time, log_out_time } = req.body;
+  const query = "INSERT INTO face_logs (userID, log_in_time, log_out_time) VALUES (?, ?, ?)";
+  
+  pool.query(
+    query,
+    [userID, log_in_time, log_out_time],
+    (err, result) => {
+      if (err) {
+        console.error("Database error: ", err);
+        return res.status(500).json({ error: "Database error", message: err.message });
+      } 
+      else {    
+        return res.status(200).json({ 
+          message: "Attendance added successfully",
+          success: true,
+          insertId: result.insertId
+        });
+      }
+    }
+  );
+});
+
 
 
 
