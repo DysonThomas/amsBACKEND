@@ -431,7 +431,7 @@ res.json({ message: "item deleted successfully" });
 });
 });
 router.get("/getLog",verifyToken,(req,res)=>{
-   const { startDate,endDate } = req.query;
+   const { startDate,endDate,storeId } = req.query;
    const query =`SELECT 
   u.id,
   us.full_name AS Dashboard_User,
@@ -445,12 +445,12 @@ router.get("/getLog",verifyToken,(req,res)=>{
   DATE_FORMAT(u.updated_logout_time, '%Y-%m-%d %H:%i:%s') AS updated_logout_time,
   DATE_FORMAT(u.updated_on, '%Y-%m-%d %H:%i:%s') AS updated_on
 FROM ams.update_logs u
-LEFT JOIN users us ON u.user_id = us.id
+LEFT JOIN dashboardusers us ON u.user_id = us.id
 LEFT JOIN roles r ON u.whoApproved = r.role_id
 LEFT JOIN userreg ur ON ur.userID = u.emp_id
-WHERE u.updated_on BETWEEN ? AND ?;
+WHERE u.updated_on BETWEEN ? AND ? and us.storeId = ? ORDER BY u.updated_on DESC;
 `
-  pool.query(query,[startDate,endDate], async (err, results) => {
+  pool.query(query,[startDate,endDate,storeId], async (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
      if (results.length === 0)
       return res.status(401).json({ message: "No Log Found" });
@@ -458,7 +458,7 @@ WHERE u.updated_on BETWEEN ? AND ?;
     } );
   });
 router.get("/getTotalHours", verifyToken, (req, res) => {
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, storeId } = req.query;
 
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "Start date and end date are required" });
@@ -478,12 +478,12 @@ router.get("/getTotalHours", verifyToken, (req, res) => {
       )) AS total_working_hours
     FROM face_logs f
     JOIN userreg u ON f.userID = u.userID
-    WHERE DATE(f.log_in_time) BETWEEN DATE(?) AND DATE(?)  
+    WHERE DATE(f.log_in_time) BETWEEN DATE(?) AND DATE(?)  AND u.storeId = ? 
     GROUP BY f.userID, u.userName
     ORDER BY u.userName;
   `;
 
-  pool.query(query, [startDate, endDate], (err, results) => {
+  pool.query(query, [startDate, endDate,storeId], (err, results) => {
     if (err) {
       console.error("SQL Error:", err);
       return res.status(500).json({ error: err.message });
