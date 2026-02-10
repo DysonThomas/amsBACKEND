@@ -915,6 +915,24 @@ router.post("/addAttendance", verifyToken, (req, res) => {
   );
 });
 
+// api top add new store
+router.post("/addStore", verifyToken, (req, res) => {
+  console.log("Adding new store with data:", req.body);
+  const { name, address } = req.body;
+  if (!name || !address) {
+    return res.status(400).json({ message: "Name and address are required" });
+  }
+  const query = "INSERT INTO storemaster (name, address) VALUES (?, ?)";
+  pool.query(query, [name, address], (err, result) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Database error", error: err });
+    }
+    return res.status(201).json({ message: "Store added successfully", storeId: result.insertId });
+  });
+}
+);  
+
 
 
 
